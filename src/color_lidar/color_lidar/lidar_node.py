@@ -30,8 +30,8 @@ class LidarNode(Node):
         self.inliers = {}
         self.tag = False
         self.lidar_position = [0, 0.25]
-        self.v_coefficient = 0.75
-        self.theta_coefficient = 1
+        self.v_coefficient = 0.75   # 0.75
+        self.theta_coefficient = 1.5    #1
         self.straight_OK = True
         self.ns = 30
         self.nc = 0
@@ -262,7 +262,7 @@ class LidarNode(Node):
                 else:
                     theta = 0.8
 
-                if -math.pi/2 < self.theta_right < -math.pi/4:
+                if -math.pi/2 < self.theta_right < -math.pi/3:
                     pass
                 else:
                     self.nc += 1
