@@ -25,7 +25,8 @@ class ImageMonitorNode(Node):
 
         height, width, _ = frame.shape
         # print(f"h, w = {height}, {width}")
-        left_region = frame[:, :width // 320]
+        # left_region = frame[:, :width // 320]
+        left_region = frame[:height//2, :width // 320]
 
         # 赤色を判定する条件を追加
         red_pixels = np.where(

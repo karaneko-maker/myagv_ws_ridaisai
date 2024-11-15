@@ -74,7 +74,9 @@ class MoveControlNode(Node):
 
         # 画像の左端を切り出す（例えば、画像の幅の半分）
         height, width, _ = frame.shape
-        left_region = frame[:, :width // 1]  # 左端の1/4幅を切り出し
+        left_region = frame[:, :width // 4]  # 左端の1/4幅を切り出し
+        upper_region = frame[:height//2, :width // 320] # 実際のテープは下側
+        lower_region = frame[height//2:, :width // 320] # 実際のテープは上側
 
         # 色の閾値を設定
         red_threshold = 80  # 赤の閾値（強さ）
@@ -85,10 +87,11 @@ class MoveControlNode(Node):
 
         if self.current_destination == "D":
             blue_pixels = np.where(
-                (left_region[:, :, 0] >= blue_threshold) &  # 青チャネルが閾値を超えている
-                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                (left_region[:, :, 2] <= red_threshold)      # 赤チャネルが閾値を下回っている
+                (lower_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                (lower_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                (lower_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
             )
+            # ここまで修正した
             green_pixels = np.where(
                 (left_region[:, :, 0] <= blue_threshold) &  # 青チャネルが閾値を超えている
                 (left_region[:, :, 1] >= green_threshold) &  # 緑チャネルが閾値を下回っている
@@ -174,9 +177,9 @@ class MoveControlNode(Node):
         elif self.current_destination in ["A", "E"]:
             # 赤色を判定する条件を追加
             red_pixels = np.where(
-                (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
+                (lower_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                (lower_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                (lower_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
             )
             if red_pixels[0].size > 0:
                 # self.get_logger().info(f'Red pixels found at {list(zip(red_pixels[0], red_pixels[1]))}')
@@ -185,23 +188,18 @@ class MoveControlNode(Node):
                 # self.get_logger().info('Red pixels detected and stop!!')
 
         elif self.current_destination in ["F", "B"]:
-            # 青色を判定する条件を追加
-            # blue_pixels = np.where(
-            #     (left_region[:, :, 0] >= red_threshold) &  # 赤チャネルが閾値を超えている
-            #     (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-            #     (left_region[:, :, 2] <= blue_threshold)    # 青チャネルが閾値を下回っている
-            # )
-            blue_pixels = np.where(
-                (left_region[:, :, 0] >= blue_threshold) &  # 青チャネルが閾値を超えている
-                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                (left_region[:, :, 2] <= red_threshold)      # 赤チャネルが閾値を下回っている
+            # 赤色を判定する条件を追加
+            red_pixels = np.where(
+                (upper_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                (upper_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                (upper_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
             )
 
-            if blue_pixels[0].size > 0:
-                # self.get_logger().info(f'Blue pixels found at {list(zip(blue_pixels[0], blue_pixels[1]))}')
+            if red_pixels[0].size > 0:
+                self.get_logger().info(f'Blue pixels found at {list(zip(red_pixels[0], red_pixels[1]))}')
                 self.stop_move()
                 self.publish_goal_reached(self.current_destination)
-                # self.get_logger().info('Blue pixels detected and stop!!')
+                # self.get_logger().info('Red pixels detected and stop!!')
 
     def stop_move(self):
         # lidar node を停止するためのコマンドを送信
