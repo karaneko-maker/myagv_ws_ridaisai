@@ -27,11 +27,16 @@ class MoveControlNode(Node):
 
         self.publisher = self.create_publisher(Twist, '/cmd_vel', 1)
 
-        self.blue_detected = False  # 青検出フラグ
-        self.previous_blue_detected = False
-        self.blue_count = 0
-        self.green_detected = False  # 緑検出フラグ
-        self.red_detected = False   # 赤検出フラグ
+        self.red_lower_detected = False
+        self.previous_red_lower_detected = False
+        self.red_lower_count = 0
+
+        self.red_upper_detected = False
+        self.previous_red_upper_detected = False
+        self.red_upper_count = 0
+
+        self.red_lower_no_detection_count = 0
+        self.red_upper_no_detection_count = 0
 
         self.current_destination = None
 
@@ -86,89 +91,98 @@ class MoveControlNode(Node):
         # print(f"move : {self.move_msg}")
 
         if self.current_destination == "D":
-            blue_pixels = np.where(
+            red_lower_pixels = np.where(
                 (lower_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
                 (lower_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
                 (lower_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
             )
-            # ここまで修正した
-            green_pixels = np.where(
-                (left_region[:, :, 0] <= blue_threshold) &  # 青チャネルが閾値を超えている
-                (left_region[:, :, 1] >= green_threshold) &  # 緑チャネルが閾値を下回っている
-                (left_region[:, :, 2] <= red_threshold)      # 赤チャネルが閾値を下回っている
+            
+            red_upper_pixels = np.where(
+                (upper_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                (upper_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                (upper_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
             )
+            current_red_lower_detected = red_lower_pixels[0].size > 0
 
-            current_blue_detected = blue_pixels[0].size > 0
-
-            if green_pixels[0].size > 0:
-                self.get_logger().info(f'Green pixels found at {list(zip(green_pixels[0], green_pixels[1]))}')
+            if red_upper_pixels[0].size > 0:
+                self.get_logger().info(f'Red upper pixels found at {list(zip(red_upper_pixels[0], red_upper_pixels[1]))}')
                 self.stop_move()
                 self.publish_goal_reached(self.current_destination)
                 self.is_right_side_D = False
-                self.blue_count = 0
+                self.red_lower_count = 0
+                self.red_lower_no_detection_count = 0
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            elif current_blue_detected:
-                # 青が検出された場合
-                if not self.previous_blue_detected:
-                    self.blue_count += 1
-                    self.get_logger().info(f'blue_count = {self.blue_count}')
-                    if self.blue_count == 1:
-                        self.is_right_side_D = True
-                        self.get_logger().info('right side D mode start')
-                    else:
-                        self.is_right_side_D = False
-                        self.get_logger().info('right side D mode finish')
-                # `previous_blue_detected` を更新
-                self.previous_blue_detected = True
+            elif current_red_lower_detected:
+                # 検出された場合
+                if self.red_lower_no_detection_count > 10:
+                    if not self.previous_red_lower_detected:
+                        self.red_lower_count += 1
+                        self.red_lower_no_detection_count = 0
+                        self.get_logger().info(f'red_lower_count = {self.red_lower_count}')
+                        if self.red_lower_count == 2:
+                            self.is_right_side_D = True
+                            self.get_logger().info('right side D mode start')
+                        elif self.red_lower_count == 3:
+                            self.is_right_side_D = False
+                            self.get_logger().info('right side D mode finish')
+                        else:
+                            self.get_logger().info('no happen')
+                    # `previous_red_lower_detected` を更新
+                    self.previous_red_lower_detected = True
+                else:
+                    self.get_logger().info(f'previous_red_lower_detected = {self.previous_red_lower_detected}')
             else:
-                # 青が検出されていない場合は `previous_blue_detected` をリセット
-                self.previous_blue_detected = False
+                # 検出されていない場合は `previous_red_lower_detected` をリセット
+                self.previous_red_lower_detected = False
+                self.red_lower_no_detection_count += 1
 
             msg = Bool()
             msg.data = self.is_right_side_D
             self.right_side_D_publisher.publish(msg)
             
-
         
         elif self.current_destination == "C":
-            blue_pixels = np.where(
-                (left_region[:, :, 0] >= blue_threshold) &  # 青チャネルが閾値を超えている
-                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                (left_region[:, :, 2] <= red_threshold)      # 赤チャネルが閾値を下回っている
+            red_upper_pixels = np.where(
+                (upper_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                (upper_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                (upper_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
             )
-            red_pixels = np.where(
-                (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
+            red_lower_pixels = np.where(
+                (lower_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                (lower_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                (lower_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
             )
 
-            current_blue_detected = blue_pixels[0].size > 0
+            current_red_upper_detected = red_upper_pixels[0].size > 0
 
-            if red_pixels[0].size > 0:
-                # self.get_logger().info(f'Red pixels found at {list(zip(red_pixels[0], red_pixels[1]))}')
-                self.red_detected = True
+            if red_lower_pixels[0].size > 0:
+                # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
                 self.stop_move()
                 self.publish_goal_reached(self.current_destination)
-                self.blue_detected = False
-                self.red_detected = False
                 self.is_right_side_C = False
-                self.blue_count = 0
-            elif current_blue_detected:
-                # 青が検出された場合
-                if not self.previous_blue_detected:
-                    self.blue_count += 1
-                    self.get_logger().info(f'blue_count = {self.blue_count}')
-                    if self.blue_count == 1:
-                        self.is_right_side_D = True
-                        self.get_logger().info('right side D mode start')
-                    else:
-                        self.is_right_side_D = False
-                        self.get_logger().info('right side D mode finish')
-                # `previous_blue_detected` を更新
-                self.previous_blue_detected = True
+                self.red_upper_count = 0
+            elif current_red_upper_detected:
+                # 検出された場合
+                if self.red_upper_no_detection_count > 10:
+                    if not self.previous_red_upper_detected:
+                        self.red_upper_count += 1
+                        self.red_upper_no_detection_count = 0
+                        self.get_logger().info(f'red upper count = {self.red_upper_count}')
+                        if self.red_upper_count == 2:
+                            self.is_right_side_D = True
+                            self.get_logger().info('right side D mode start')
+                        elif self.red_upper_count == 3:
+                            self.is_right_side_D = False
+                            self.get_logger().info('right side D mode finish')
+                        else:
+                            self.get_logger().info('no happen')
+
+                    # `previous_red_upper_detected` を更新
+                    self.previous_red_upper_detected = True
             else:
-                # 青が検出されていない場合は `previous_blue_detected` をリセット
-                self.previous_blue_detected = False
+                # 青が検出されていない場合は `previous_red_upper_detected` をリセット
+                self.previous_red_upper_detected = False
+                self.red_upper_no_detection_count += 1
 
             msg = Bool()
             msg.data = self.is_right_side_C

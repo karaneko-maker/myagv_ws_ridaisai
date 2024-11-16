@@ -244,7 +244,7 @@ class LidarNode(Node):
                     self.nc = 0
             
             if self.is_right_side_D or self.is_right_side_C:
-                theta = (dr - self.dr_goal) * self.v_coefficient - theta_now * self.theta_coefficient
+                theta = (dr - dr - self.dr_goal) * self.v_coefficient - theta_now * self.theta_coefficient
             else:
                 theta = (dl - dr) * self.v_coefficient - theta_now * self.theta_coefficient
 
