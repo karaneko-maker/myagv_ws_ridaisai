@@ -154,6 +154,7 @@ class MoveControlNode(Node):
             )
 
             current_red_upper_detected = red_upper_pixels[0].size > 0
+            self.is_right_side_C = True
 
             if red_lower_pixels[0].size > 0:
                 # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
@@ -161,32 +162,6 @@ class MoveControlNode(Node):
                 self.publish_goal_reached(self.current_destination)
                 self.is_right_side_C = False
                 self.red_upper_count = 0
-            elif current_red_upper_detected:
-                # 検出された場合
-                if self.red_upper_no_detection_count > 10:
-                    if not self.previous_red_upper_detected:
-                        self.red_upper_count += 1
-                        self.red_upper_no_detection_count = 0
-                        self.get_logger().info(f'red upper count = {self.red_upper_count}')
-                        if self.red_upper_count == 2:
-                            self.is_right_side_D = True
-                            self.get_logger().info('right side D mode start')
-                        elif self.red_upper_count == 3:
-                            self.is_right_side_D = False
-                            self.get_logger().info('right side D mode finish')
-                        else:
-                            self.get_logger().info('no happen')
-
-                    # `previous_red_upper_detected` を更新
-                    self.previous_red_upper_detected = True
-            else:
-                # 青が検出されていない場合は `previous_red_upper_detected` をリセット
-                self.previous_red_upper_detected = False
-                self.red_upper_no_detection_count += 1
-
-            msg = Bool()
-            msg.data = self.is_right_side_C
-            self.right_side_D_publisher.publish(msg)
 
         elif self.current_destination in ["A", "E"]:
             # 赤色を判定する条件を追加
