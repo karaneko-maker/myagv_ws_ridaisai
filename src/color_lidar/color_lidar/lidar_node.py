@@ -24,7 +24,7 @@ class LidarNode(Node):
             self.lidar_callback,
             10
         )
-        self.publisher = self.create_publisher(Twist, '/cmd_vel', 1)
+        self.publisher = self.create_publisher(Twist, '/cmd_vel', 10)
         # self.br = self.create_transform_broadcaster()
         self.dist = {}
         self.inliers = {}
@@ -36,14 +36,24 @@ class LidarNode(Node):
         self.ns = 30
         self.nc = 0
         self.c_thresh = 0
+        self.dl = 0.2
         
-        self.right_side_D_subscription = self.create_subscription(Bool, '/rihgt_side_D_msg',  self.right_side_D_callback, 10)
-        self.right_side_C_subscription = self.create_subscription(Bool, '/rihgt_side_C_msg',  self.right_side_C_callback, 10)
+        self.right_side_D_subscription = self.create_subscription(Bool, '/right_side_D_msg',  self.right_side_D_callback, 10)
+        self.right_side_C_subscription = self.create_subscription(Bool, '/right_side_C_msg',  self.right_side_C_callback, 10)
+        self.right_side_subscription = self.create_subscription(Bool, '/right_side_msg',  self.right_side_callback, 10)
+
         self.move_forward_subscription = self.create_subscription(Bool,'/move_msg',  self.move_forward_callback, 10)
         self.is_moving_forward = False
         self.is_right_side_D = False
         self.is_right_side_C = False
-        self.dr_goal = 0.4
+        self.is_right_side = False
+        self.w_theta = 0
+
+        self.camera_move_publisher = self.create_publisher(Bool, '/camera_move_msg', 10)
+        self.camera_move = False
+        self.D_camera_stop = False
+        self.regular = True
+        self.catch = True
 
         # Send a static transform for lidar
         # transform = TransformStamped()
@@ -58,18 +68,29 @@ class LidarNode(Node):
     
     ### Bool 値定義 ###
     def right_side_D_callback(self, msg):
-        self.is_right_side_D = msg.data
+        if self.catch:
+            self.is_right_side_D = msg.data
+            if self.is_right_side_D:
+                self.regular = False
         
-        if self.is_right_side_D:
-            self.get_logger().info("Right Side D!")
+        # if self.is_right_side_D:
+        #     self.get_logger().info("Right Side D!")
         # else:
         #     self.get_logger().info("Normal")
     
     def right_side_C_callback(self, msg):
         self.is_right_side_C = msg.data
         
-        if self.is_right_side_C:
-            self.get_logger().info("Right Side C!")
+        # if self.is_right_side_C:
+        #     self.get_logger().info("Right Side C!")
+        # else:
+        #     self.get_logger().info("Normal")
+    
+    def right_side_callback(self, msg):
+        self.is_right_side = msg.data
+        
+        # if self.is_right_side:
+        #     self.get_logger().info("Right Side!")
         # else:
         #     self.get_logger().info("Normal")
     
@@ -184,7 +205,7 @@ class LidarNode(Node):
             # point_cloud_msg = self.create_point_cloud_msg(x_inlier, y_inlier)
             # pub.publish(point_cloud_msg)
         # self.get_logger().info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        self.get_logger().info(f"nc : {self.nc}, ns : {self.ns}, theta : {self.theta_right}, dist : {self.dist}")
+        self.get_logger().info(f"nc : {self.nc}, ns : {self.ns}, theta : {self.theta_right}, dist : {self.dist} D : {self.is_right_side_D} , Catch : {self.catch}, regular : {self.regular}")
         self.publish_v(self.dist)
         self.dist = {}
         self.inliers = {}
@@ -200,11 +221,6 @@ class LidarNode(Node):
         else:
             front_OK = True
             df = 100
-
-        if self.straight_OK:
-            self.get_logger().info("SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS")
-        else:
-            self.get_logger().info("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")
         
         if self.straight_OK or self.is_right_side_C:
             if self.theta_right < 0:
@@ -217,7 +233,9 @@ class LidarNode(Node):
                 return
             
             if self.ns < 20:
+                self.w_theta = 0
                 v = 0.4
+                self.theta_coefficient = 1.5
                 if "left" in dist:
                     dl = dist["left"][0]
                 else:
@@ -225,61 +243,143 @@ class LidarNode(Node):
                 if front_OK or df > 0.85 + self.lidar_position[1]:
                     self.ns += 1
             else:
+                self.w_theta = 0
+                self.theta_coefficient = 1.5
                 if "left" in dist:
                     dl = dist["left"][0]
                 else:
                     return
-                if front_OK or df > 0.85 + self.lidar_position[1]:
-                    v = 0.4
-                elif df > 0.65 + self.lidar_position[1]:
-                    v = 0.2 + (df - self.lidar_position[1] -0.65)
-                elif df > 0.5 + self.lidar_position[1]:
-                    v = 0.2
-                    self.w_theta = 0.65 - df
+                
+                # print(f"is_right_side = {self.is_right_side_D}")  # 現在の値を出力する
+
+                if self.is_right_side_D:
+                    self.D_camera_stop = True
+                    # self.get_logger().info("{YELLOW}right_side_D mode")
+                    if front_OK or df > 1.5 + self.lidar_position[1]:
+                        v = 0.5
+                    elif df > 1.2 + self.lidar_position[1]:
+                        v = 0.4
+                    elif df > 0.97 + self.lidar_position[1]:
+                        v = 0.3
+                        # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                        # v = 0.1 + (df - self.lidar_position[1] -0.65)
+                    # elif df > 0.9 + self.lidar_position[1]:
+                    #     v = 0.3
+                    #     self.w_theta = 0.65 - df
+                    else:
+                        self.c_thresh += 1
+                        if self.c_thresh > 2:
+                            self.straight_OK = False
+                        v = 0.4
+                        self.nc = 0
                 else:
-                    self.c_thresh += 1
-                    if self.c_thresh > 2:
-                        self.straight_OK = False
-                    v = 0.4
-                    self.nc = 0
+                    self.D_camera_stop = False
+                    if front_OK or df > 0.85 + self.lidar_position[1]:
+                        v = 0.4
+                        self.w_theta = 0
+                    elif df > 0.65 + self.lidar_position[1]:
+                        v = 0.2 + (df - self.lidar_position[1] -0.65)
+                        self.w_theta = math.pi/9
+                    elif df > 0.5 + self.lidar_position[1]:
+                        v = 0.2
+                        self.w_theta = math.pi/9
+                    else:
+                        self.c_thresh += 1
+                        if self.c_thresh > 2:
+                            self.straight_OK = False
+                        v = 0.4
+                        self.nc = 0
+                    if not self.catch:
+                        v = 0.1
             
-            if self.is_right_side_D or self.is_right_side_C:
-                theta = (dr - dr - self.dr_goal) * self.v_coefficient - theta_now * self.theta_coefficient
+            if self.is_right_side_D or self.is_right_side_C or self.is_right_side:
+                # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                if self.dl < 0.05 or self.regular:
+                    self.dl = 0.05
+                else:
+                    self.dl -= 0.005
+                self.v_coefficient = 1.5
+                theta = (dl - dr) * self.v_coefficient - theta_now * self.theta_coefficient +self.w_theta
             else:
                 theta = (dl - dr) * self.v_coefficient - theta_now * self.theta_coefficient
+        
+        if theta:
+            if self.catch:
+                thm = 0.8
+            else:
+                thm = 0.4
+            if theta > thm:
+                theta = thm
+            elif theta < -thm:
+                theta = -thm
 
             # theta = (dl - dr) * self.v_coefficient - theta_now * self.theta_coefficient
         
         # self.get_logger().info(f"{self.theta_right}")
         
         if not self.straight_OK and not self.is_right_side_C:
-            if self.nc < 3 or not -math.pi/2 < self.theta_right < -math.pi/3:
-                v = 0.2
-                # theta = 0.8   # 元のプログラム
-
-                if self.is_right_side_D:
-                    theta = -0.8
+            if self.is_right_side_D:
+                # print("!!!!!!!!!!!!!!!!!!!!!")
+                if self.nc < 5 or not math.pi/3 < self.theta_right < math.pi/2:
+                    v = 0.175
+                    theta = -0.5
+                    if math.pi/4 < self.theta_right < math.pi/2:
+                        pass
+                    else:
+                        self.nc += 1
                 else:
+                    self.regular = True
+                    self.D_camera_stop = False
+                    self.is_right_side_D = False
+                    self.is_right_side = True
+                    self.catch = False
+                    self.dr0 = dist["right"][0]
+                    self.straight_OK = True
+                    self.c_thresh = 0
+                    self.ns = 0
+                    v = 0.4
+                    theta =  math.pi / 6
+                    self.dl = 0.2
+            else:
+                if self.nc < 5 or not -math.pi/2 < self.theta_right < -math.pi/3:
+                    v = 0.2
                     theta = 0.8
 
-                if -math.pi/2 < self.theta_right < -math.pi/3:
-                    pass
+                    if -math.pi/2 < self.theta_right < -math.pi/3:
+                        pass
+                    else:
+                        self.nc += 1
                 else:
-                    self.nc += 1
+                    self.catch = True
+                    self.dr0 = dist["right"][0]
+                    self.straight_OK = True
+                    self.c_thresh = 0
+                    self.ns = 0
+                    v = 0.4
+                    theta = - 1 *math.pi / 6
+                    self.dl = 0.2
+
+        if self.straight_OK and not self.D_camera_stop:
+            self.get_logger().info("SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS")
+            if not locals().get('dr'):
+                self.camera_move = False
+            elif dr > 0.3:
+                self.camera_move = False
             else:
-                self.dr0 = dist["right"][0]
-                self.straight_OK = True
-                self.c_thresh = 0
-                self.ns = 0
-                v = 0.4
-                theta = 0.0
-        
-        self.get_logger().info(f"v : {v}, theta : {theta}")
+                self.camera_move = True
+        else:
+            if not self.straight_OK:
+                self.get_logger().info("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")
+            self.camera_move = False
+        msg = Bool()
+        msg.data = self.camera_move
+        self.camera_move_publisher.publish(msg)
 
         twist = Twist()
         twist.linear.x = v
         twist.angular.z = theta
         self.publisher.publish(twist)
+        self.get_logger().info(f"v : {v}, theta : {theta}")
 
 def main():
     rclpy.init()
