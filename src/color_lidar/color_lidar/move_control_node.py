@@ -43,7 +43,9 @@ class MoveControlNode(Node):
         self.current_destination = None
 
         self.camera_move_subscription = self.create_subscription(Bool, '/camera_move_msg',  self.camera_move_callback, 10)
+        self.D_stop_subscription = self.create_subscription(Bool, '/D_stop_msg',  self.D_stop_callback, 10)
         self.camera_move = True
+        self.D_stop = False
     
     def camera_move_callback(self, msg):
         self.camera_move = msg.data
@@ -52,6 +54,9 @@ class MoveControlNode(Node):
         #     self.get_logger().info("Camera move!")
         # else:
         #     self.get_logger().info("Camera stop")
+
+    def D_stop_callback(self, msg):
+        self.D_stop = msg.data
 
     def listener_callback(self, msg):
         # self.get_logger().info(f'Received message on {self.get_namespace()}/command: {msg.data}')
@@ -135,12 +140,7 @@ class MoveControlNode(Node):
                     (lower_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
                     (lower_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
                 )
-                
-                red_upper_pixels = np.where(
-                    (upper_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                    (upper_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                    (upper_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
-                )
+
                 current_red_lower_detected = red_lower_pixels[0].size > 0
 
                 # if red_upper_pixels[0].size > 0:
@@ -156,24 +156,18 @@ class MoveControlNode(Node):
                     if not self.previous_red_lower_detected:
                         self.red_lower_count += 1
                         print(f"red_lower_count = {self.red_lower_count}")
-
-                        if self.red_lower_count == 2:
+                        
+                        if self.red_lower_count ==1:
+                            self.get_logger().info('nohappen')
+                        elif self.red_lower_count == 2:
                             self.is_right_side_D = True
                             self.get_logger().info('right side D mode start')
-                        elif self.red_lower_count == 3:
-                            self.is_right_side_D = False
-                            self.is_right_side = True
-                            self.get_logger().info('right side mode start')
-                        elif self.red_lower_count == 4:
-                            self.get_logger().info(f'Red upper pixels found at {list(zip(red_upper_pixels[0], red_upper_pixels[1]))}')
-                            self.stop_move()
-                            self.publish_goal_reached(self.current_destination)
+                        else:
+                            self.get_logger().info('no happen')
                             self.is_right_side_D = False
                             self.is_right_side = False
                             self.red_lower_count = 0
                             self.red_lower_no_detection_count = 0
-                        else:
-                            self.get_logger().info('no happen')
                         # `previous_red_lower_detected` を更新
                         self.previous_red_lower_detected = True
                         # else:
@@ -190,6 +184,12 @@ class MoveControlNode(Node):
                 msg2 = Bool()
                 msg2.data = self.is_right_side
                 self.right_side_publisher.publish(msg2)
+
+            if self.D_stop:
+                self.get_logger().info('!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+                self.stop_move()
+                self.publish_goal_reached(self.current_destination)
+                self.is_right_side_D = False
             
         
         elif self.current_destination == "C":
@@ -205,47 +205,17 @@ class MoveControlNode(Node):
                     (lower_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
                 )
 
-                current_red_upper_detected = red_upper_pixels[0].size > 0
-
+                self.is_right_side_C = True
                 if red_lower_pixels[0].size > 0:
                     # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
                     self.stop_move()
                     self.publish_goal_reached(self.current_destination)
                     self.is_right_side_C = False
                     self.red_upper_count = 0
-                elif current_red_upper_detected:
-                    # 検出された場合
-                    if self.red_upper_no_detection_count > 10:
-                        if not self.previous_red_upper_detected:
-                            self.red_upper_count += 1
-                            self.red_upper_no_detection_count = 0
-                            self.get_logger().info(f'red_upper_count = {self.red_upper_count}')
-                            
-                            if self.red_upper_count == 1:
-                                self.is_right_side_C = False
-                                self.is_right_side = True
-                                self.get_logger().info('right side mode start')
-                            if self.red_upper_count == 2:
-                                self.is_right_side_C = True
-                                self.is_right_side = False
-                                self.get_logger().info('right side D mode start')
-                            else:
-                                self.get_logger().info('no happen')
-                        # `previous_red_lower_detected` を更新
-                        self.previous_red_upper_detected = True
-                    else:
-                        self.get_logger().info(f'previous_red_upper_detected = {self.previous_red_upper_detected}')
-                else:
-                    # 検出されていない場合は `previous_red_upper_detected` をリセット
-                    self.previous_red_upper_detected = False
-                    self.red_upper_no_detection_count += 1
-
+    
                 msg1 = Bool()
                 msg1.data = self.is_right_side_C
                 self.right_side_C_publisher.publish(msg1)
-                msg2 = Bool()
-                msg2.data = self.is_right_side
-                self.right_side_publisher.publish(msg2)
         
         elif self.current_destination == "B":
             if self.camera_move:

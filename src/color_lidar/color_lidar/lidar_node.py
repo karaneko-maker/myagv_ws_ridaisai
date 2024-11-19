@@ -13,6 +13,7 @@ from sklearn import linear_model
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
 from std_msgs.msg import Bool
+import time
 
 class LidarNode(Node):
     def __init__(self):
@@ -31,7 +32,7 @@ class LidarNode(Node):
         self.tag = False
         self.lidar_position = [0, 0.25]
         self.v_coefficient = 0.75   # 0.75
-        self.theta_coefficient = 1.5    #1
+        self.theta_coefficient = 1.25    #1
         self.straight_OK = True
         self.ns = 30
         self.nc = 0
@@ -50,10 +51,14 @@ class LidarNode(Node):
         self.w_theta = 0
 
         self.camera_move_publisher = self.create_publisher(Bool, '/camera_move_msg', 10)
+        self.D_stop_publisher = self.create_publisher(Bool, '/D_stop_msg', 10)
         self.camera_move = False
-        self.D_camera_stop = False
+        # self.D_camera_stop = False
         self.regular = True
         self.catch = True
+        self.D_stop = False
+        self.D_end = True
+        self.C_curve = False
 
         # Send a static transform for lidar
         # transform = TransformStamped()
@@ -71,6 +76,7 @@ class LidarNode(Node):
         if self.catch:
             self.is_right_side_D = msg.data
             if self.is_right_side_D:
+                self.catch = False
                 self.regular = False
         
         # if self.is_right_side_D:
@@ -80,6 +86,14 @@ class LidarNode(Node):
     
     def right_side_C_callback(self, msg):
         self.is_right_side_C = msg.data
+        if self.is_right_side_C:
+            if self.D_end:
+                self.C_curve = True
+                self.D_end = False
+                self.nc = 0
+                self.ns = 30
+                self.w_theta = -math.pi/9
+        
         
         # if self.is_right_side_C:
         #     self.get_logger().info("Right Side C!")
@@ -99,8 +113,8 @@ class LidarNode(Node):
         
         if self.is_moving_forward:
             self.get_logger().info("Move!")
-        else:
-            self.get_logger().info("ransac stop!")
+        # else:
+        #     self.get_logger().info("ransac stop!")
         
         # if self.is_moving_forward:
         #     self.get_logger().info("Move Forward Triggered!")
@@ -155,6 +169,8 @@ class LidarNode(Node):
     def ransac(self, x, y, num_inliers_thresh=20):
         ransac = linear_model.RANSACRegressor(min_samples=2, residual_threshold=0.05, max_trials=200000)
         while True:
+            if len(x) < 50:
+                break
             ransac.fit(x.reshape(-1, 1), y)
             a = ransac.estimator_.coef_
             b = ransac.estimator_.intercept_
@@ -205,12 +221,19 @@ class LidarNode(Node):
             # point_cloud_msg = self.create_point_cloud_msg(x_inlier, y_inlier)
             # pub.publish(point_cloud_msg)
         # self.get_logger().info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        self.get_logger().info(f"nc : {self.nc}, ns : {self.ns}, theta : {self.theta_right}, dist : {self.dist} D : {self.is_right_side_D} , Catch : {self.catch}, regular : {self.regular}")
+        self.get_logger().info(f"nc : {self.nc}, ns : {self.ns}, theta : {self.theta_right}, dist : {self.dist} D : {self.is_right_side_D} , Catch : {self.catch}, regular : {self.regular}, C_curve : {self.C_curve}")
         self.publish_v(self.dist)
         self.dist = {}
         self.inliers = {}
 
     def publish_v(self, dist):
+        # if not self.OK:
+        #     msg = Bool()
+        #     msg.data = True
+        #     self.D_stop_publisher.publish(msg)
+        #     return
+        v = 0.0
+        theta = 0.0
         if self.tag:
             x_thresh = -0.095
         else:
@@ -222,7 +245,7 @@ class LidarNode(Node):
             front_OK = True
             df = 100
         
-        if self.straight_OK or self.is_right_side_C:
+        if self.straight_OK and not self.C_curve:
             if self.theta_right < 0:
                 theta_now = -math.pi/2 - self.theta_right
             else:
@@ -234,17 +257,24 @@ class LidarNode(Node):
             
             if self.ns < 20:
                 self.w_theta = 0
-                v = 0.4
-                self.theta_coefficient = 1.5
+                if self.catch:
+                    v = 0.4
+                else:
+                    v = 0.2
+                self.theta_coefficient = 1.25
                 if "left" in dist:
                     dl = dist["left"][0]
                 else:
                     dl = self.dr0
-                if front_OK or df > 0.85 + self.lidar_position[1]:
-                    self.ns += 1
+                if not self.catch:
+                    if front_OK or df > 0.5 + self.lidar_position[1]:
+                        self.ns += 1
+                else:
+                    if front_OK or df > 0.85 + self.lidar_position[1]:
+                        self.ns += 1
             else:
                 self.w_theta = 0
-                self.theta_coefficient = 1.5
+                self.theta_coefficient = 1.25
                 if "left" in dist:
                     dl = dist["left"][0]
                 else:
@@ -253,7 +283,7 @@ class LidarNode(Node):
                 # print(f"is_right_side = {self.is_right_side_D}")  # 現在の値を出力する
 
                 if self.is_right_side_D:
-                    self.D_camera_stop = True
+                    # self.D_camera_stop = True
                     # self.get_logger().info("{YELLOW}right_side_D mode")
                     if front_OK or df > 1.5 + self.lidar_position[1]:
                         v = 0.5
@@ -272,17 +302,20 @@ class LidarNode(Node):
                             self.straight_OK = False
                         v = 0.4
                         self.nc = 0
+                elif self.is_right_side_C:
+                    v = 0.2
                 else:
-                    self.D_camera_stop = False
-                    if front_OK or df > 0.85 + self.lidar_position[1]:
-                        v = 0.4
-                        self.w_theta = 0
-                    elif df > 0.65 + self.lidar_position[1]:
+                    # self.D_camera_stop = False
+                    if self.catch:
+                        df_thresh = 0.5
+                    else:
+                        df_thresh = 0.8
+                    if not self.is_right_side and not is_right_side_C:
+                        self.w_theta = math.pi/9
+                    if df > df_thresh + 0.15 + self.lidar_position[1]:
                         v = 0.2 + (df - self.lidar_position[1] -0.65)
-                        self.w_theta = math.pi/9
-                    elif df > 0.5 + self.lidar_position[1]:
+                    elif df > df_thresh + self.lidar_position[1]:
                         v = 0.2
-                        self.w_theta = math.pi/9
                     else:
                         self.c_thresh += 1
                         if self.c_thresh > 2:
@@ -290,34 +323,46 @@ class LidarNode(Node):
                         v = 0.4
                         self.nc = 0
                     if not self.catch:
-                        v = 0.1
+                        v = 0.2
             
             if self.is_right_side_D or self.is_right_side_C or self.is_right_side:
-                # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
                 if self.dl < 0.05 or self.regular:
                     self.dl = 0.05
+                    self.v_coefficient = 0.35
+                    self.theta_coefficient = 3
                 else:
                     self.dl -= 0.005
-                self.v_coefficient = 1.5
-                theta = (dl - dr) * self.v_coefficient - theta_now * self.theta_coefficient +self.w_theta
+                    self.v_coefficient = 0.75
+                if self.is_right_side_C:
+                    self.theta_coefficient = 0.0
+                theta = (dl - dr) * self.v_coefficient - theta_now * self.theta_coefficient + self.w_theta
+                if not self.catch:
+                    theta *= 0.5
+                elif self.is_right_side_C:
+                    theta *= 1.5
             else:
+                self.v_coefficient = 0.75
                 theta = (dl - dr) * self.v_coefficient - theta_now * self.theta_coefficient
         
-        if theta:
-            if self.catch:
-                thm = 0.8
-            else:
-                thm = 0.4
-            if theta > thm:
-                theta = thm
-            elif theta < -thm:
-                theta = -thm
+            if theta:
+                if self.catch:
+                    thm = 0.6
+                else:
+                    thm = 0.4
+                if theta > thm:
+                    theta = thm
+                elif theta < -thm:
+                    theta = -thm
+            
+            self.get_logger().info(f"dl : {dl}")
 
             # theta = (dl - dr) * self.v_coefficient - theta_now * self.theta_coefficient
         
         # self.get_logger().info(f"{self.theta_right}")
-        
-        if not self.straight_OK and not self.is_right_side_C:
+
+#CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC        
+        if not self.straight_OK and not self.is_right_side_C or self.C_curve:
             if self.is_right_side_D:
                 # print("!!!!!!!!!!!!!!!!!!!!!")
                 if self.nc < 5 or not math.pi/3 < self.theta_right < math.pi/2:
@@ -329,10 +374,9 @@ class LidarNode(Node):
                         self.nc += 1
                 else:
                     self.regular = True
-                    self.D_camera_stop = False
+                    # self.D_camera_stop = False
                     self.is_right_side_D = False
                     self.is_right_side = True
-                    self.catch = False
                     self.dr0 = dist["right"][0]
                     self.straight_OK = True
                     self.c_thresh = 0
@@ -340,28 +384,68 @@ class LidarNode(Node):
                     v = 0.4
                     theta =  math.pi / 6
                     self.dl = 0.2
-            else:
-                if self.nc < 5 or not -math.pi/2 < self.theta_right < -math.pi/3:
-                    v = 0.2
-                    theta = 0.8
 
+            elif self.C_curve:
+                if self.nc < 5 or not -math.pi/2 < self.theta_right < -math.pi/3:
+                    v = 0.175
+                    theta = 0.5
                     if -math.pi/2 < self.theta_right < -math.pi/3:
                         pass
                     else:
                         self.nc += 1
                 else:
-                    self.catch = True
                     self.dr0 = dist["right"][0]
                     self.straight_OK = True
                     self.c_thresh = 0
                     self.ns = 0
                     v = 0.4
-                    theta = - 1 *math.pi / 6
+                    theta =  -math.pi / 6
                     self.dl = 0.2
+                    self.C_curve = False
+                    self.regular = False
 
-        if self.straight_OK and not self.D_camera_stop:
+            else:
+                if self.catch:
+                    theta_thresh = -math.pi/3
+                else:
+                    theta_thresh = -math.pi/4
+                if self.nc < 5 or not -math.pi/2 < self.theta_right < theta_thresh:
+                    if self.catch:
+                        v = 0.2
+                        theta = 0.8
+                    else:
+                        v = 0.175
+                        theta = 0.5
+
+                    if -math.pi/2 < self.theta_right < theta_thresh:
+                        pass
+                    else:
+                        self.nc += 1
+                else:
+                    if not self.catch:
+                        v = 0.0
+                        theta = 0.0
+                        self.catch = True
+                        msg = Bool()
+                        msg.data = True
+                        self.D_stop_publisher.publish(msg)
+                        self.D_end = True
+                    else:
+                        v = 0.4
+                        theta = - 1 *math.pi / 6
+                    self.dr0 = dist["right"][0]
+                    self.straight_OK = True
+                    self.c_thresh = 0
+                    self.ns = 0
+                    self.dl = 0.2
+                    if self.is_right_side:
+                        self.w_theta = -math.pi/9
+
+        if self.straight_OK and not self.C_curve:
             self.get_logger().info("SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS")
-            if not locals().get('dr'):
+            if not self.catch:
+                self.camera_move = False
+            elif not locals().get('dr'):
                 self.camera_move = False
             elif dr > 0.3:
                 self.camera_move = False
@@ -374,12 +458,23 @@ class LidarNode(Node):
         msg = Bool()
         msg.data = self.camera_move
         self.camera_move_publisher.publish(msg)
+        
+        if self.is_right_side_C and not self.C_curve:
+            if self.ns < 20:
+                theta = -0.4 + 0.04 * self.ns
+            else:
+                dl = 0.1
+                v = 0.3
+                theta = (dl - dr) * 1.0 - math.sin(theta_now) * 0.6
+                self.get_logger().info(f"dl - dr : {dl - dr}, theta : {math.sin(theta_now)}")
+
 
         twist = Twist()
         twist.linear.x = v
         twist.angular.z = theta
         self.publisher.publish(twist)
         self.get_logger().info(f"v : {v}, theta : {theta}")
+        self.get_logger().info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 
 def main():
     rclpy.init()
