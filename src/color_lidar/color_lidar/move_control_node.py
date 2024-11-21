@@ -18,16 +18,22 @@ class MoveControlNode(Node):
         self.move_publisher = self.create_publisher(Bool, '/move_msg', 10)
         self.right_side_D_publisher = self.create_publisher(Bool, '/right_side_D_msg', 10)
         self.right_side_C_publisher = self.create_publisher(Bool, '/right_side_C_msg', 10)
+        self.right_side_B_publisher = self.create_publisher(Bool, '/right_side_B_msg', 10)
+        self.right_side_A_publisher = self.create_publisher(Bool, '/right_side_A_msg', 10)
+        self.right_side_F_publisher = self.create_publisher(Bool, '/right_side_F_msg', 10)
         self.right_side_publisher = self.create_publisher(Bool, '/right_side_msg', 10)
         self.move_msg = False
         self.is_right_side_D = False
         self.is_right_side_C = False
+        self.is_right_side_B = False
+        self.is_right_side_A = False
+        self.is_right_side_F = False
         self.is_right_side = False
 
         self.bridge = CvBridge()
         self.subscription = self.create_subscription(Image, '/image_raw', self.image_callback, 10)
 
-        self.publisher = self.create_publisher(Twist, '/cmd_vel', 1)
+        self.publisher = self.create_publisher(Twist, '/cmd_vel', 10)
 
         self.red_lower_detected = False
         self.previous_red_lower_detected = False
@@ -36,6 +42,10 @@ class MoveControlNode(Node):
         self.red_upper_detected = False
         self.previous_red_upper_detected = False
         self.red_upper_count = 0
+
+        self.red_detected = False
+        self.previous_red_detected = False
+        self.red_count = 0
 
         self.red_lower_no_detection_count = 0
         self.red_upper_no_detection_count = 0
@@ -46,6 +56,12 @@ class MoveControlNode(Node):
         self.D_stop_subscription = self.create_subscription(Bool, '/D_stop_msg',  self.D_stop_callback, 10)
         self.camera_move = True
         self.D_stop = False
+
+        self.nb = 0
+        self.na = 0
+        self.nf = 0
+        self.ne = 0
+        self.nd = 0
     
     def camera_move_callback(self, msg):
         self.camera_move = msg.data
@@ -66,18 +82,28 @@ class MoveControlNode(Node):
         if command.startswith("go to "):
             destination_key = command[6:].upper()
             # self.get_logger().info(f'current destination key: {destination_key}')
-            if destination_key in ["A", "B", "C", "F"]:
-                self.current_destination = destination_key
-                self.activate_move()
-            elif destination_key == "E":
+            if destination_key == "E":
                 self.current_destination = destination_key
                 self.activate_move_E()
             elif destination_key == "D":
                 self.current_destination = destination_key
+                self.nd = 0
                 self.activate_move_D()
             elif destination_key == "C":
                 self.current_destination = destination_key
                 self.activate_move_C()
+            elif destination_key == "B":
+                self.current_destination = destination_key
+                self.nb = 0
+                self.activate_move_B()
+            elif destination_key == "A":
+                self.current_destination = destination_key
+                self.na = 0
+                self.activate_move_A()
+            elif destination_key == "F":
+                self.current_destination = destination_key
+                self.nf = 0
+                self.activate_move_F()
             # else:
             #     # self.get_logger().info(f'Unknown destination: {destination_key}')
         
@@ -115,6 +141,36 @@ class MoveControlNode(Node):
         self.move_msg = Bool()
         self.move_msg.data = True
         self.move_publisher.publish(self.move_msg)
+        self.get_logger().info('Mode D Start...')
+    
+    def activate_move_B(self):
+        # 右側走行モード
+        self.is_right_side_B = True
+        msg = Bool()
+        msg.data = self.is_right_side_B
+        self.right_side_B_publisher.publish(msg)
+        self.move_msg = Bool()
+        self.move_msg.data = True
+        self.move_publisher.publish(self.move_msg)
+    
+    def activate_move_A(self):
+        self.is_right_side_A = True
+        msg = Bool()
+        msg.data = self.is_right_side_A
+        self.right_side_A_publisher.publish(msg)
+        self.move_msg = Bool()
+        self.move_msg.data = True
+        self.move_publisher.publish(self.move_msg)
+    
+    def activate_move_F(self):
+        self.is_right_side_F = True
+        msg = Bool()
+        msg.data = self.is_right_side_F
+        self.right_side_F_publisher.publish(msg)
+        self.move_msg = Bool()
+        self.move_msg.data = True
+        self.move_publisher.publish(self.move_msg)
+        self.get_logger().info('Go to F')
 
     def image_callback(self, msg):
         # ROS2の画像メッセージをOpenCV形式に変換
@@ -122,7 +178,7 @@ class MoveControlNode(Node):
 
         # 画像の左端を切り出す（例えば、画像の幅の半分）
         height, width, _ = frame.shape
-        left_region = frame[:, :width // 4]  # 左端の1/4幅を切り出し
+        left_region = frame[:, :width // 160]  # 左端の1/4幅を切り出し
         upper_region = frame[:height//2, :width // 320] # 実際のテープは下側
         lower_region = frame[height//2:, :width // 320] # 実際のテープは上側
 
@@ -135,160 +191,161 @@ class MoveControlNode(Node):
 
         if self.current_destination == "D":
             if self.camera_move:
-                red_lower_pixels = np.where(
-                    (lower_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                    (lower_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                    (lower_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
-                )
-
-                current_red_lower_detected = red_lower_pixels[0].size > 0
-
-                # if red_upper_pixels[0].size > 0:
-                #     self.get_logger().info(f'Red upper pixels found at {list(zip(red_upper_pixels[0], red_upper_pixels[1]))}')
-                #     self.stop_move()
-                #     self.publish_goal_reached(self.current_destination)
-                #     self.is_right_side_D = False
-                #     self.is_right_side = False
-                #     self.red_lower_count = 0
-                #     self.red_lower_no_detection_count = 0
-                #     print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                if current_red_lower_detected:
-                    if not self.previous_red_lower_detected:
-                        self.red_lower_count += 1
-                        print(f"red_lower_count = {self.red_lower_count}")
-                        
-                        if self.red_lower_count ==1:
-                            self.get_logger().info('nohappen')
-                        elif self.red_lower_count == 2:
-                            self.is_right_side_D = True
-                            self.get_logger().info('right side D mode start')
-                        else:
-                            self.get_logger().info('no happen')
-                            self.is_right_side_D = False
-                            self.is_right_side = False
-                            self.red_lower_count = 0
-                            self.red_lower_no_detection_count = 0
-                        # `previous_red_lower_detected` を更新
-                        self.previous_red_lower_detected = True
-                        # else:
-                        #     self.get_logger().info(f'previous_red_lower_detected = {self.previous_red_lower_detected}')
-                else:
-                    # 検出されていない場合は `previous_red_upper_detected` をリセット
-                    self.previous_red_lower_detected = False
-
-                msg = Bool()
-                msg.data = self.is_right_side_D
-                self.right_side_D_publisher.publish(msg)
-                # if self.is_right_side_D:
-                #     self.get_logger().info("Right Side D!")
-                msg2 = Bool()
-                msg2.data = self.is_right_side
-                self.right_side_publisher.publish(msg2)
-
-            if self.D_stop:
-                self.get_logger().info('!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-                self.stop_move()
-                self.publish_goal_reached(self.current_destination)
-                self.is_right_side_D = False
-            
-        
-        elif self.current_destination == "C":
-            if self.camera_move:
-                red_upper_pixels = np.where(
-                    (upper_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                    (upper_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                    (upper_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
-                )
-                red_lower_pixels = np.where(
-                    (lower_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                    (lower_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                    (lower_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
-                )
-
-                self.is_right_side_C = True
-                if red_lower_pixels[0].size > 0:
-                    # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
-                    self.stop_move()
-                    self.publish_goal_reached(self.current_destination)
-                    self.is_right_side_C = False
-                    self.red_upper_count = 0
-    
-                msg1 = Bool()
-                msg1.data = self.is_right_side_C
-                self.right_side_C_publisher.publish(msg1)
-        
-        elif self.current_destination == "B":
-            if self.camera_move:
                 # 赤色を判定する条件を追加
                 red_pixels = np.where(
                     (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
                     (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
                     (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
                 )
+                if red_pixels[0].size == 0:
+                    self.na += 1
+                
+                if self.na > 30:
+                    if red_pixels[0].size > 0:
+                        self.is_right_side_D = True
+                        self.is_right_side = False
+
+            if self.D_stop:
+                self.stop_move()
+                self.publish_goal_reached(self.current_destination)
+                self.is_right_side_D = False
+                self.is_right_side = False
+
+            if self.is_right_side_D:
+                self.get_logger().info(f'WAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+            
+            msg = Bool()
+            msg.data = self.is_right_side_D
+            self.right_side_D_publisher.publish(msg)
+            msg2 = Bool()
+            msg2.data = self.is_right_side
+            self.right_side_publisher.publish(msg2)
+            
+        
+        elif self.current_destination == "C":
+            # if self.camera_move:
+            red_pixels = np.where(
+                (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
+            )
+
+            self.is_right_side_C = True
+            if red_pixels[0].size > 0:
+                # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
+                self.stop_move()
+                self.publish_goal_reached(self.current_destination)
+                self.is_right_side_C = False
+    
+            msg1 = Bool()
+            msg1.data = self.is_right_side_C
+            self.right_side_C_publisher.publish(msg1)
+        
+        elif self.current_destination == "B":
+            self.is_right_side_B = True
+
+            # 赤色を判定する条件を追加
+            red_pixels = np.where(
+                (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
+            )
+            if red_pixels[0].size == 0:
+                self.nb += 1
+            
+            if self.nb > 30:
                 if red_pixels[0].size > 0:
-                    # self.get_logger().info(f'Red pixels found at {list(zip(red_pixels[0], red_pixels[1]))}')
+                    # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
                     self.stop_move()
                     self.publish_goal_reached(self.current_destination)
+                    self.is_right_side_B = False
+
+            msg1 = Bool()
+            msg1.data = self.is_right_side_B
+            self.right_side_B_publisher.publish(msg1)
+
         
         elif self.current_destination == "A":
-            if self.camera_move:
-                red_upper_pixels = np.where(
-                    (upper_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                    (upper_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                    (upper_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
-                )
-                red_lower_pixels = np.where(
-                    (lower_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                    (lower_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                    (lower_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
-                )
+            self.is_right_side_A = True
 
-                if red_upper_pixels[0].size > 0 and red_lower_pixels[0].size == 0:
+            # 赤色を判定する条件を追加
+            red_pixels = np.where(
+                (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
+            )
+            if red_pixels[0].size == 0:
+                self.na += 1
+            
+            if self.na > 30:
+                if red_pixels[0].size > 0:
+                    # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
                     self.stop_move()
                     self.publish_goal_reached(self.current_destination)
-                    # self.get_logger().info('Red pixels detected and stop!!')
+                    self.is_right_side_A = False
+            
+            msg = Bool()
+            msg.data = self.is_right_side_A
+            self.right_side_A_publisher.publish(msg)
+        
+        elif self.current_destination == "F":
+            self.is_right_side_F = True
+
+            # 赤色を判定する条件を追加
+            red_pixels = np.where(
+                (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
+            )
+            if red_pixels[0].size == 0:
+                self.nf += 1
+            
+            if self.nf > 30:
+                if red_pixels[0].size > 0:
+                    # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
+                    self.stop_move()
+                    self.publish_goal_reached(self.current_destination)
+                    self.is_right_side_F = False
+                    self.nf = 0
+            
+            msg = Bool()
+            msg.data = self.is_right_side_F
+            self.right_side_F_publisher.publish(msg)
 
         elif self.current_destination == "E":
-            if self.camera_move:
-                # 赤色を判定する条件を追加
-                red_pixels = np.where(
-                    (lower_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                    (lower_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                    (lower_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
-                )
+            # 赤色を判定する条件を追加
+            red_pixels = np.where(
+                (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
+            )
+            if red_pixels[0].size == 0:
+                self.ne += 1
+        
+            if self.ne > 30:
                 if red_pixels[0].size > 0:
-                    # self.get_logger().info(f'Red pixels found at {list(zip(red_pixels[0], red_pixels[1]))}')
+                    # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
                     self.stop_move()
                     self.publish_goal_reached(self.current_destination)
-                    # self.get_logger().info('Red pixels detected and stop!!')
+                    self.ne = 0
 
-        elif self.current_destination == "F":
-            if self.camera_move:
-                # 赤色を判定する条件を追加
-                red_pixels = np.where(
-                    (upper_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                    (upper_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                    (upper_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
-                )
-
-                if red_pixels[0].size > 0:
-                    self.get_logger().info(f'Blue pixels found at {list(zip(red_pixels[0], red_pixels[1]))}')
-                    self.stop_move()
-                    self.publish_goal_reached(self.current_destination)
-                    # self.get_logger().info('Red pixels detected and stop!!')
 
     def stop_move(self):
         # lidar node を停止するためのコマンドを送信
         self.move_msg = Bool()
         self.move_msg.data = False
         self.move_publisher.publish(self.move_msg)
-        # self.get_logger().info('Stop lidar node')
+        self.get_logger().info('Stop lidar node')
 
         # 速度0を出す
-        twist = Twist()
-        twist.linear.x = 0.0
-        twist.angular.z = 0.0
-        self.publisher.publish(twist)
+        n = 0
+        while n < 1000:
+            twist = Twist()
+            twist.linear.x = 0.0
+            twist.angular.z = 0.0
+            self.publisher.publish(twist)
+            n += 1
+
     
     def publish_goal_reached(self, destination_key):
         agv_id = "agv1"  # ここでAGVのIDを設定する

@@ -26,14 +26,19 @@ class ImageMonitorNode(Node):
         left_region = frame[:, :width // 1]  # 左端の1/4幅を切り出し
 
         # 赤色の閾値を設定
-        red_threshold = 80  # 赤の閾値（強さ）
+        red_threshold = 60  # 赤の閾値（強さ）
         green_threshold = 50  # 緑の閾値（低ければ低いほど赤と認識しやすい）
         blue_threshold = 50  # 青の閾値（低ければ低いほど赤と認識しやすい）
 
+        # frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # plt.imshow(frame_rgb)
+        # plt.axis('off')  # 軸を非表示
+        # plt.show()  # 画像を表示
+
         # 赤色を判定する条件を追加
         red_pixels = np.where(
-            (left_region[:, :, 2] <= red_threshold) &  # 赤チャネルが閾値を超えている
-            (left_region[:, :, 1] >= green_threshold) &  # 緑チャネルが閾値を下回っている
+            (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+            (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
             (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
         )
 

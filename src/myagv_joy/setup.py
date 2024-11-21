@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'color_lidar'
+package_name = 'myagv_joy'
 
 setup(
     name=package_name,
@@ -14,17 +14,13 @@ setup(
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='yurina',
-    maintainer_email='yurina@todo.todo',
+    maintainer_email='7521075@ed.tus.ac.jp',
     description='TODO: Package description',
     license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            "move_control_node =color_lidar.move_control_node:main",
-            "test_node =color_lidar.test_node:main",
-            "trans_command_node =color_lidar.trans_command_node:main",
-            "lidar_node =color_lidar.lidar_node:main",
-            "second_lidar_node = second_lidar_node:main"
+            "teleop_twist_joy = myagv_joy.teleop_twist_joy:main"
         ],
     },
 )

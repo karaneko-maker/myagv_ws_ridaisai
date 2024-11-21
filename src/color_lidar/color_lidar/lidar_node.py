@@ -26,103 +26,69 @@ class LidarNode(Node):
             10
         )
         self.publisher = self.create_publisher(Twist, '/cmd_vel', 10)
-        # self.br = self.create_transform_broadcaster()
         self.dist = {}
         self.inliers = {}
-        self.tag = False
-        self.lidar_position = [0, 0.25]
-        self.v_coefficient = 0.75   # 0.75
-        self.theta_coefficient = 1.25    #1
-        self.straight_OK = True
         self.ns = 30
         self.nc = 0
         self.c_thresh = 0
-        self.dl = 0.2
         
-        self.right_side_D_subscription = self.create_subscription(Bool, '/right_side_D_msg',  self.right_side_D_callback, 10)
+        self.right_side_D_subscription = self.create_subscription(Bool, '/right_side_D_msg',  self.right_side_RED_callback, 10)
         self.right_side_C_subscription = self.create_subscription(Bool, '/right_side_C_msg',  self.right_side_C_callback, 10)
-        self.right_side_subscription = self.create_subscription(Bool, '/right_side_msg',  self.right_side_callback, 10)
+        self.right_side_B_subscription = self.create_subscription(Bool, '/right_side_B_msg',  self.right_side_B_callback, 10)
+        self.right_side_A_subscription = self.create_subscription(Bool, '/right_side_A_msg',  self.right_side_A_callback, 10)
+        self.right_side_F_subscription = self.create_subscription(Bool, '/right_side_F_msg',  self.right_side_F_callback, 10)
+        self.right_side_subscription = self.create_subscription(Bool, '/right_side_msg',  self.right_side_D_callback, 10)
 
         self.move_forward_subscription = self.create_subscription(Bool,'/move_msg',  self.move_forward_callback, 10)
         self.is_moving_forward = False
-        self.is_right_side_D = False
-        self.is_right_side_C = False
-        self.is_right_side = False
-        self.w_theta = 0
-
         self.camera_move_publisher = self.create_publisher(Bool, '/camera_move_msg', 10)
         self.D_stop_publisher = self.create_publisher(Bool, '/D_stop_msg', 10)
         self.camera_move = False
-        # self.D_camera_stop = False
-        self.regular = True
-        self.catch = True
-        self.D_stop = False
-        self.D_end = True
-        self.C_curve = False
 
-        # Send a static transform for lidar
-        # transform = TransformStamped()
-        # transform.header.stamp = self.get_clock().now().to_msg()
-        # transform.header.frame_id = 'map'
-        # transform.child_frame_id = 'lidar'
-        # transform.transform.translation.x = 0.0
-        # transform.transform.translation.y = 0.0
-        # transform.transform.translation.z = 0.0
-        # transform.transform.rotation = tf_transformations.quaternion_from_euler(0, 0, 0)
-        # self.br.sendTransform(transform)
-    
-    ### Bool 値定義 ###
-    def right_side_D_callback(self, msg):
-        if self.catch:
-            self.is_right_side_D = msg.data
-            if self.is_right_side_D:
-                self.catch = False
-                self.regular = False
-        
-        # if self.is_right_side_D:
-        #     self.get_logger().info("Right Side D!")
-        # else:
-        #     self.get_logger().info("Normal")
-    
+        self.now = 0
+        self.mode_n = 0
+        self.straight1 = [6, 8, 9, 11]
+        self.straight2 = [1, 3, 15, 16, 17]
+        self.curve = [2, 7, 12, 13, 18]
+
+    def right_side_RED_callback(self, msg):
+        if mag.data:
+            self.now = 9
+
     def right_side_C_callback(self, msg):
-        self.is_right_side_C = msg.data
-        if self.is_right_side_C:
-            if self.D_end:
-                self.C_curve = True
-                self.D_end = False
-                self.nc = 0
-                self.ns = 30
-                self.w_theta = -math.pi/9
-        
-        
-        # if self.is_right_side_C:
-        #     self.get_logger().info("Right Side C!")
-        # else:
-        #     self.get_logger().info("Normal")
+        if mag.data:
+            self.now = 13
     
-    def right_side_callback(self, msg):
-        self.is_right_side = msg.data
-        
-        # if self.is_right_side:
-        #     self.get_logger().info("Right Side!")
-        # else:
-        #     self.get_logger().info("Normal")
+    def right_side_B_callback(self, msg):
+        if mag.data:
+            self.now = 16
+    
+    def right_side_A_callback(self, msg):
+        if mag.data:
+            self.now = 17
+    
+    def right_side_F_callback(self, msg):
+        if mag.data:
+            self.now = 1
+
+    def right_side_D_callback(self, msg):
+        if mag.data:
+            self.now = 6
     
     def move_forward_callback(self, msg):
         self.is_moving_forward = msg.data
         
         if self.is_moving_forward:
             self.get_logger().info("Move!")
-        # else:
-        #     self.get_logger().info("ransac stop!")
-        
-        # if self.is_moving_forward:
-        #     self.get_logger().info("Move Forward Triggered!")
-        # else:
-        #     self.get_logger().info("Stop Movement")
-    ####################
-
-
+        else:
+            v = 0.0
+            theta = 0.0
+            twist = Twist()
+            twist.linear.x = v
+            twist.angular.z = theta
+            self.publisher.publish(twist)
+            self.get_logger().info("ransac stop!")
+            
     def lidar_callback(self, msg):   
         if not self.is_moving_forward:
             return
@@ -157,15 +123,6 @@ class LidarNode(Node):
         y_sample = y[indices]
         return x_sample, y_sample
     
-    def create_point_cloud_msg(self, x_array, y_array):
-        z_array = np.zeros_like(x_array)
-        points = np.vstack((x_array, y_array, z_array)).T
-        header = Header()
-        header.stamp = self.get_clock().now().to_msg()
-        header.frame_id = "base_link"
-        # cloud_msg = pc2.create_cloud_xyz32(header, points)
-        # return cloud_msg
-    
     def ransac(self, x, y, num_inliers_thresh=20):
         ransac = linear_model.RANSACRegressor(min_samples=2, residual_threshold=0.05, max_trials=200000)
         while True:
@@ -183,14 +140,17 @@ class LidarNode(Node):
                 else:
                     n = "rear"
                 if n in self.inliers:
-                    if self.inliers[n] > num_inliers:
+                    if self.inliers[n] > num_inliers or abs(b)/(a**2+1)**0.5 < self.lidar_position[1]-0.05:
                         pass
                     else:
                         self.inliers[n] = num_inliers
                         self.dist[n] = abs(b)/(a**2+1)**0.5
                 else:
-                    self.inliers[n] = num_inliers
-                    self.dist[n] = abs(b)/(a**2+1)**0.5
+                    if abs(b)/(a**2+1)**0.5 < self.lidar_position[1]-0.05:
+                        pass
+                    else:
+                        self.inliers[n] = num_inliers
+                        self.dist[n] = abs(b)/(a**2+1)**0.5
             else:
                 if -b/a < 0:
                     n = "right"
@@ -210,7 +170,6 @@ class LidarNode(Node):
                     self.inliers[n] = num_inliers
                     self.dist[n] = abs(a*point[0] - point[1] + b)/(a**2+1)**0.5
             pub = self.create_publisher(PointCloud2, f'/lidar/wall_{n}', 10)
-            # self.get_logger().info(f"theta_{n} : {self.theta}, dist_{n} : {self.dist[n]}")
             
             if num_inliers < num_inliers_thresh:
                 break
@@ -218,264 +177,206 @@ class LidarNode(Node):
             y_inlier = y[inlier_mask]
             x = np.delete(x, inlier_mask)
             y = np.delete(y, inlier_mask)
-            # point_cloud_msg = self.create_point_cloud_msg(x_inlier, y_inlier)
-            # pub.publish(point_cloud_msg)
-        # self.get_logger().info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        self.get_logger().info(f"nc : {self.nc}, ns : {self.ns}, theta : {self.theta_right}, dist : {self.dist} D : {self.is_right_side_D} , Catch : {self.catch}, regular : {self.regular}, C_curve : {self.C_curve}")
+
         self.publish_v(self.dist)
         self.dist = {}
         self.inliers = {}
 
     def publish_v(self, dist):
-        # if not self.OK:
-        #     msg = Bool()
-        #     msg.data = True
-        #     self.D_stop_publisher.publish(msg)
-        #     return
-        v = 0.0
-        theta = 0.0
-        if self.tag:
-            x_thresh = -0.095
-        else:
-            x_thresh = 0
+        v = 0
+        theta = 0
+        dl = 0
+        V, TH = 0, 0
+        A, B = 0, 0
+        R = 0.25
+
         if "front" in dist:
-            df = dist["front"][0]
-            front_OK = False
-        else:
             front_OK = True
-            df = 100
+            df = dist["front"][0]
+        else:
+            front_OK = False
+        if "right" in dist:
+            right_OK = True
+            dr = dist["right"][0]
+        else:
+            right_OK = False
         
-        if self.straight_OK and not self.C_curve:
+        if right_OK:
             if self.theta_right < 0:
                 theta_now = -math.pi/2 - self.theta_right
             else:
                 theta_now = math.pi/2 - self.theta_right
-            if "right" in dist:
-                dr = dist["right"][0]
+        
+        if self.now == 1:
+            A = 1
+            dl = 0.1
+            B = 1.5
+            if front_OK and right_OK:
+                if df > 0.9 + R:
+                    self.count_to_curve = 0
+                    v = 0.4
+                elif df > 0.65 + R:
+                    self.count_to_curve = 0
+                    v = 0.3
+                else:
+                    self.count_to_curve += 1
+                    if self.count_to_curve > 1:
+                        self.now += 1
+                        self.count_to_curve = 0
+                    return
+                if df > 0.5 + R
+                    self.check_curve_finish += 1
+            elif right_OK:
+                self.count_to_curve = 0
+                v = 0.3
             else:
                 return
-            
-            if self.ns < 20:
-                self.w_theta = 0
-                if self.catch:
-                    v = 0.4
-                else:
-                    v = 0.2
-                self.theta_coefficient = 1.25
-                if "left" in dist:
-                    dl = dist["left"][0]
-                else:
-                    dl = self.dr0
-                if not self.catch:
-                    if front_OK or df > 0.5 + self.lidar_position[1]:
-                        self.ns += 1
-                else:
-                    if front_OK or df > 0.85 + self.lidar_position[1]:
-                        self.ns += 1
+            theta = A*(dl-dr) - B*math.sin(theta_now) + math.pi/12
+        
+        if self.now == 3:
+            A = 1
+            dl = 0.1
+            B = 1.5
+            if right_OK:
+                if dl - dr > 0.1:
+                    A = 3
+                v = 0.4
             else:
-                self.w_theta = 0
-                self.theta_coefficient = 1.25
-                if "left" in dist:
-                    dl = dist["left"][0]
+                return
+            theta = A*(dl-dr) - B*math.sin(theta_now) + math.pi/12
+        
+        if self.now == 6:
+            V = 0.35
+            df = 0.05
+            Th = 3
+            if front_OK and right_OK:
+                if df > 0.9 + R:
+                    self.count_to_curve = 0
+                    v = 0.4
+                elif df > 0.65 + R:
+                    self.count_to_curve = 0
+                    v = 0.3
                 else:
+                    self.count_to_curve += 1
+                    if self.count_to_curve > 1:
+                        self.now += 1
+                        self.count_to_curve = 0
                     return
-                
-                # print(f"is_right_side = {self.is_right_side_D}")  # 現在の値を出力する
-
-                if self.is_right_side_D:
-                    # self.D_camera_stop = True
-                    # self.get_logger().info("{YELLOW}right_side_D mode")
-                    if front_OK or df > 1.5 + self.lidar_position[1]:
-                        v = 0.5
-                    elif df > 1.2 + self.lidar_position[1]:
-                        v = 0.4
-                    elif df > 0.97 + self.lidar_position[1]:
-                        v = 0.3
-                        # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                        # v = 0.1 + (df - self.lidar_position[1] -0.65)
-                    # elif df > 0.9 + self.lidar_position[1]:
-                    #     v = 0.3
-                    #     self.w_theta = 0.65 - df
-                    else:
-                        self.c_thresh += 1
-                        if self.c_thresh > 2:
-                            self.straight_OK = False
-                        v = 0.4
-                        self.nc = 0
-                elif self.is_right_side_C:
-                    v = 0.2
-                else:
-                    # self.D_camera_stop = False
-                    if self.catch:
-                        df_thresh = 0.5
-                    else:
-                        df_thresh = 0.8
-                    if not self.is_right_side and not is_right_side_C:
-                        self.w_theta = math.pi/9
-                    if df > df_thresh + 0.15 + self.lidar_position[1]:
-                        v = 0.2 + (df - self.lidar_position[1] -0.65)
-                    elif df > df_thresh + self.lidar_position[1]:
-                        v = 0.2
-                    else:
-                        self.c_thresh += 1
-                        if self.c_thresh > 2:
-                            self.straight_OK = False
-                        v = 0.4
-                        self.nc = 0
-                    if not self.catch:
-                        v = 0.2
-            
-            if self.is_right_side_D or self.is_right_side_C or self.is_right_side:
-                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-                if self.dl < 0.05 or self.regular:
-                    self.dl = 0.05
-                    self.v_coefficient = 0.35
-                    self.theta_coefficient = 3
-                else:
-                    self.dl -= 0.005
-                    self.v_coefficient = 0.75
-                if self.is_right_side_C:
-                    self.theta_coefficient = 0.0
-                theta = (dl - dr) * self.v_coefficient - theta_now * self.theta_coefficient + self.w_theta
-                if not self.catch:
-                    theta *= 0.5
-                elif self.is_right_side_C:
-                    theta *= 1.5
+                if df > 0.65 + R
+                    self.check_curve_finish += 1
+            elif right_OK:
+                self.count_to_curve = 0
+                v = 0.4
             else:
-                self.v_coefficient = 0.75
-                theta = (dl - dr) * self.v_coefficient - theta_now * self.theta_coefficient
+                return
+            theta = V*(dl-dr) - Th*theta_now
         
-            if theta:
-                if self.catch:
-                    thm = 0.6
-                else:
-                    thm = 0.4
-                if theta > thm:
-                    theta = thm
-                elif theta < -thm:
-                    theta = -thm
-            
-            self.get_logger().info(f"dl : {dl}")
-
-            # theta = (dl - dr) * self.v_coefficient - theta_now * self.theta_coefficient
+        if self.now == 8:
+            V = 0.35
+            df = 0.05
+            Th = 3
+            if right_OK:
+                if dl - dr > 0.1:
+                    A = 3
+                v = 0.4
+            else:
+                return
+            theta = V*(dl-dr) - Th*theta_now
         
-        # self.get_logger().info(f"{self.theta_right}")
-
-#CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC        
-        if not self.straight_OK and not self.is_right_side_C or self.C_curve:
-            if self.is_right_side_D:
-                # print("!!!!!!!!!!!!!!!!!!!!!")
-                if self.nc < 5 or not math.pi/3 < self.theta_right < math.pi/2:
-                    v = 0.175
-                    theta = -0.5
-                    if math.pi/4 < self.theta_right < math.pi/2:
-                        pass
-                    else:
-                        self.nc += 1
-                else:
-                    self.regular = True
-                    # self.D_camera_stop = False
-                    self.is_right_side_D = False
-                    self.is_right_side = True
-                    self.dr0 = dist["right"][0]
-                    self.straight_OK = True
-                    self.c_thresh = 0
-                    self.ns = 0
+        if self.now == 9:
+            V = 0.75
+            df = 0.05
+            Th = 1.25
+            if front_OK and right_OK:
+                if df > 1.5 + R:
+                    self.count_to_curve = 0
+                    v = 0.5
+                elif df > 1.2 + R:
+                    self.count_to_curve = 0
                     v = 0.4
-                    theta =  math.pi / 6
-                    self.dl = 0.2
-
-            elif self.C_curve:
-                if self.nc < 5 or not -math.pi/2 < self.theta_right < -math.pi/3:
-                    v = 0.175
-                    theta = 0.5
-                    if -math.pi/2 < self.theta_right < -math.pi/3:
-                        pass
-                    else:
-                        self.nc += 1
+                elif df > 0.97 + R:
+                    self.count_to_curve = 0
+                    v = 0.3
                 else:
-                    self.dr0 = dist["right"][0]
-                    self.straight_OK = True
-                    self.c_thresh = 0
-                    self.ns = 0
-                    v = 0.4
-                    theta =  -math.pi / 6
-                    self.dl = 0.2
-                    self.C_curve = False
-                    self.regular = False
-
-            else:
-                if self.catch:
-                    theta_thresh = -math.pi/3
-                else:
-                    theta_thresh = -math.pi/4
-                if self.nc < 5 or not -math.pi/2 < self.theta_right < theta_thresh:
-                    if self.catch:
-                        v = 0.2
-                        theta = 0.8
-                    else:
-                        v = 0.175
-                        theta = 0.5
-
-                    if -math.pi/2 < self.theta_right < theta_thresh:
-                        pass
-                    else:
-                        self.nc += 1
-                else:
-                    if not self.catch:
-                        v = 0.0
-                        theta = 0.0
-                        self.catch = True
-                        msg = Bool()
-                        msg.data = True
-                        self.D_stop_publisher.publish(msg)
-                        self.D_end = True
-                    else:
-                        v = 0.4
-                        theta = - 1 *math.pi / 6
-                    self.dr0 = dist["right"][0]
-                    self.straight_OK = True
-                    self.c_thresh = 0
-                    self.ns = 0
-                    self.dl = 0.2
-                    if self.is_right_side:
-                        self.w_theta = -math.pi/9
-
-        if self.straight_OK and not self.C_curve:
-            self.get_logger().info("SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS")
-            if not self.catch:
-                self.camera_move = False
-            elif not locals().get('dr'):
-                self.camera_move = False
-            elif dr > 0.3:
-                self.camera_move = False
-            else:
-                self.camera_move = True
-        else:
-            if not self.straight_OK:
-                self.get_logger().info("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")
-            self.camera_move = False
-        msg = Bool()
-        msg.data = self.camera_move
-        self.camera_move_publisher.publish(msg)
-        
-        if self.is_right_side_C and not self.C_curve:
-            if self.ns < 20:
-                theta = -0.4 + 0.04 * self.ns
-            else:
-                dl = 0.1
+                    self.count_to_curve += 1
+                    if self.count_to_curve > 1:
+                        self.now += 1
+                        self.count_to_curve = 0
+                    return
+                if df > 0.97 + R:
+                    df -= self.check_curve_finish*0.005
+                    self.check_curve_finish += 1
+            elif right_OK:
+                self.count_to_curve = 0
                 v = 0.3
-                theta = (dl - dr) * 1.0 - math.sin(theta_now) * 0.6
-                self.get_logger().info(f"dl - dr : {dl - dr}, theta : {math.sin(theta_now)}")
-
-
-        twist = Twist()
-        twist.linear.x = v
-        twist.angular.z = theta
-        self.publisher.publish(twist)
-        self.get_logger().info(f"v : {v}, theta : {theta}")
-        self.get_logger().info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-
+            else:
+                return
+            theta = V*(dl-dr) - Th*theta_now
+        
+        if self.now == 11:
+            V = 0.35
+            df = 0.05
+            Th = 3
+            if front_OK and right_OK:
+                if df > 1.15 + R:
+                    self.count_to_curve = 0
+                    v = 0.4
+                elif df > 0.8 + R:
+                    self.count_to_curve = 0
+                    v = 0.3
+                else:
+                    self.count_to_curve += 1
+                    if self.count_to_curve > 1:
+                        self.now += 1
+                        self.count_to_curve = 0
+                    return
+                if df > 0.8 + R:
+                    self.check_curve_finish += 1
+            elif right_OK:
+                self.count_to_curve = 0
+                v = 0.3
+            else:
+                return
+            theta = V*(dl-dr) - Th*theta_now
+        
+        if self.now == 15 or self.now == 16:
+            A = 1
+            dl = 0
+            B = 0.5
+            if right_OK:
+                if dl - dr > 0.1:
+                    A = 3
+                v = 0.4
+            else:
+                return
+            theta = A*(dl-dr) - B*math.sin(theta_now) + math.pi/12
+        
+        if self.now == 17:
+            A = 1
+            dl = 0.3
+            B = 0.5
+            if front_OK and right_OK:
+                if df > 0.8 + R:
+                    self.count_to_curve = 0
+                    v = 0.4
+                elif df > 0.52 + R - 0.25*math.sin(theta_now):
+                    self.count_to_curve = 0
+                    v = 0.3
+                else:
+                    self.count_to_curve += 1
+                    if self.count_to_curve > 1:
+                        self.now += 1
+                        self.count_to_curve = 0
+                    return
+                if df > 0.52 + R
+                    self.check_curve_finish += 1
+            elif right_OK:
+                self.count_to_curve = 0
+                v = 0.3
+            else:
+                return
+            theta = A*(dl-dr) - B*math.sin(theta_now) + math.pi/12
+            
 def main():
     rclpy.init()
     lidar_node = LidarNode()
