@@ -17,10 +17,9 @@ setup(
     maintainer_email='7521075@ed.tus.ac.jp',
     description='TODO: Package description',
     license='TODO: License declaration',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            "teleop_twist_joy = myagv_joy.teleop_twist_joy:main"
+            'teleop_twist_joy = myagv_joy.teleop_twist_joy:main',
         ],
     },
 )

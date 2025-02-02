@@ -70,6 +70,7 @@ class LidarNode(Node):
         self.no_curve = False
         self.is_right_side_D2 = False
         self.regular_a = True
+        
 
         # Send a static transform for lidar
         # transform = TransformStamped()
@@ -647,6 +648,8 @@ class LidarNode(Node):
         self.publisher.publish(twist)
         self.get_logger().info(f"v : {v}, theta : {theta}")
         # self.get_logger().info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+
+        
 
 def main():
     rclpy.init()

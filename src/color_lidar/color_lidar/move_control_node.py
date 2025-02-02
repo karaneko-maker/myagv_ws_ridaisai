@@ -84,6 +84,7 @@ class MoveControlNode(Node):
             # self.get_logger().info(f'current destination key: {destination_key}')
             if destination_key == "E":
                 self.current_destination = destination_key
+                self.ne = 0
                 self.activate_move_E()
             elif destination_key == "D":
                 self.current_destination = destination_key
@@ -120,14 +121,15 @@ class MoveControlNode(Node):
         twist.linear.x = 0.4
         twist.angular.z = 0.0
         self.publisher.publish(twist)
+        self.ne = 0
         self.get_logger().info('Go Straight...')
     
     def activate_move_C(self):
         # 右側走行（左旋回）モード
-        self.is_right_side = True
+        self.is_right_side_C = True
         msg = Bool()
-        msg.data = self.is_right_side
-        self.right_side_publisher.publish(msg)
+        msg.data = self.is_right_side_C
+        self.right_side_C_publisher.publish(msg)
         self.move_msg = Bool()
         self.move_msg.data = True
         self.move_publisher.publish(self.move_msg)
@@ -183,7 +185,7 @@ class MoveControlNode(Node):
         lower_region = frame[height//2:, :width // 320] # 実際のテープは上側
 
         # 色の閾値を設定
-        red_threshold = 80  # 赤の閾値（強さ）
+        red_threshold = 100  # 赤の閾値（強さ）
         green_threshold = 50  # 緑の閾値（低ければ低いほど赤と認識しやすい）
         blue_threshold = 50  # 青の閾値（低ければ低いほど赤と認識しやすい）
 
@@ -223,42 +225,42 @@ class MoveControlNode(Node):
             
         
         elif self.current_destination == "C":
-            # if self.camera_move:
-            red_pixels = np.where(
-                (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
-            )
+            # self.is_right_side_C = True
+            if self.camera_move:
+                red_pixels = np.where(
+                    (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                    (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                    (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
+                )
 
-            self.is_right_side_C = True
-            if red_pixels[0].size > 0:
-                # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
-                self.stop_move()
-                self.publish_goal_reached(self.current_destination)
-                self.is_right_side_C = False
-    
+                if red_pixels[0].size > 0:
+                    # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
+                    self.stop_move()
+                    self.publish_goal_reached(self.current_destination)
+                    self.is_right_side_C = False
+        
             msg1 = Bool()
             msg1.data = self.is_right_side_C
             self.right_side_C_publisher.publish(msg1)
         
         elif self.current_destination == "B":
-            self.is_right_side_B = True
-
-            # 赤色を判定する条件を追加
-            red_pixels = np.where(
-                (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
-            )
-            if red_pixels[0].size == 0:
-                self.nb += 1
-            
-            if self.nb > 30:
-                if red_pixels[0].size > 0:
-                    # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
-                    self.stop_move()
-                    self.publish_goal_reached(self.current_destination)
-                    self.is_right_side_B = False
+            # self.is_right_side_B = True
+            if self.camera_move:
+                # 赤色を判定する条件を追加
+                red_pixels = np.where(
+                    (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                    (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                    (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
+                )
+                if red_pixels[0].size == 0:
+                    self.nb += 1
+                
+                if self.nb > 30:
+                    if red_pixels[0].size > 0:
+                        # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
+                        self.stop_move()
+                        self.publish_goal_reached(self.current_destination)
+                        self.is_right_side_B = False
 
             msg1 = Bool()
             msg1.data = self.is_right_side_B
@@ -266,68 +268,69 @@ class MoveControlNode(Node):
 
         
         elif self.current_destination == "A":
-            self.is_right_side_A = True
-
-            # 赤色を判定する条件を追加
-            red_pixels = np.where(
-                (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
-            )
-            if red_pixels[0].size == 0:
-                self.na += 1
-            
-            if self.na > 30:
-                if red_pixels[0].size > 0:
-                    # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
-                    self.stop_move()
-                    self.publish_goal_reached(self.current_destination)
-                    self.is_right_side_A = False
+            # self.is_right_side_A = True
+            if self.camera_move:
+                # 赤色を判定する条件を追加
+                red_pixels = np.where(
+                    (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                    (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                    (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
+                )
+                if red_pixels[0].size == 0:
+                    self.na += 1
+                
+                if self.na > 30:
+                    if red_pixels[0].size > 0:
+                        # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
+                        self.stop_move()
+                        self.publish_goal_reached(self.current_destination)
+                        self.is_right_side_A = False
             
             msg = Bool()
             msg.data = self.is_right_side_A
             self.right_side_A_publisher.publish(msg)
         
         elif self.current_destination == "F":
-            self.is_right_side_F = True
-
-            # 赤色を判定する条件を追加
-            red_pixels = np.where(
-                (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
-            )
-            if red_pixels[0].size == 0:
-                self.nf += 1
-            
-            if self.nf > 30:
-                if red_pixels[0].size > 0:
-                    # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
-                    self.stop_move()
-                    self.publish_goal_reached(self.current_destination)
-                    self.is_right_side_F = False
-                    self.nf = 0
+            # self.is_right_side_F = True
+            if self.camera_move:
+                # 赤色を判定する条件を追加
+                red_pixels = np.where(
+                    (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                    (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                    (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
+                )
+                if red_pixels[0].size == 0:
+                    self.nf += 1
+                
+                if self.nf > 30:
+                    if red_pixels[0].size > 0:
+                        # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
+                        self.stop_move()
+                        self.publish_goal_reached(self.current_destination)
+                        self.is_right_side_F = False
+                        self.nf = 0
             
             msg = Bool()
             msg.data = self.is_right_side_F
             self.right_side_F_publisher.publish(msg)
 
         elif self.current_destination == "E":
-            # 赤色を判定する条件を追加
-            red_pixels = np.where(
-                (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
-                (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
-                (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
-            )
-            if red_pixels[0].size == 0:
-                self.ne += 1
-        
-            if self.ne > 30:
-                if red_pixels[0].size > 0:
-                    # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
-                    self.stop_move()
-                    self.publish_goal_reached(self.current_destination)
-                    self.ne = 0
+            if self.camera_move:
+                # 赤色を判定する条件を追加
+                red_pixels = np.where(
+                    (left_region[:, :, 2] >= red_threshold) &  # 赤チャネルが閾値を超えている
+                    (left_region[:, :, 1] <= green_threshold) &  # 緑チャネルが閾値を下回っている
+                    (left_region[:, :, 0] <= blue_threshold)    # 青チャネルが閾値を下回っている
+                )
+                if red_pixels[0].size == 0:
+                    self.ne += 1
+            
+                if self.ne > 30:
+                    if red_pixels[0].size > 0:
+                        # self.get_logger().info(f'Red pixels found at {list(zip(red_lower_pixels[0], red_lower_pixels[1]))}')
+                        self.stop_move()
+                        self.publish_goal_reached(self.current_destination)
+                        self.ne = 0
 
 
     def stop_move(self):

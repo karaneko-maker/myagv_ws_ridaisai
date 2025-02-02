@@ -21,7 +21,8 @@ setup(
     entry_points={
         'console_scripts': [
             "diff_drive_controller = myagv_communication.diff_drive_controller:main",
-            "serial = myagv_communication.serial:main"
+            "serial = myagv_communication.serial:main",
+            "teleop_twist_joy = myagv_communication.teleop_twist_joy:main"
         ],
     },
 )

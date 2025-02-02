@@ -46,12 +46,11 @@ class LidarNode(Node):
         self.camera_move = False
 
         self.now = 0
-        self.mode_n = 0
         self.count_to_curve = 0
         self.flont_far = 0
         self.count_to_straight = 0
         self.check_curve_finish = 0
-        self.control_points = [0,1,6,9,13,16,17,19]
+        self.camera_on_modes = [3, 4, 8, 15, 16, 19]
         self.last_R, self.last_C, self.last_B, self.last_A, self.last_F, self.last_D = False, False, False, False, False, False
 
     def right_side_RED_callback(self, msg):
@@ -62,9 +61,9 @@ class LidarNode(Node):
     def right_side_C_callback(self, msg):
         if not self.last_C and msg.data:
             self.now = 13
-            msg = Bool()
-            msg.data = True
-            self.D_stop_publisher.publish(msg)
+            msgD = Bool()
+            msgD.data = False
+            self.D_stop_publisher.publish(msgD)
         self.last_C = msg.data
     
     def right_side_B_callback(self, msg):
@@ -75,6 +74,7 @@ class LidarNode(Node):
     def right_side_A_callback(self, msg):
         if not self.last_A and msg.data:
             self.now = 17
+            print(F"{self.now}")
         self.last_A = msg.data
     
     def right_side_F_callback(self, msg):
@@ -151,6 +151,7 @@ class LidarNode(Node):
         self.ransacr(xr, yr)
         end =time.time()
         print(end-start)
+        print(f"{self.dist, self.theta_right}")
         self.publish_v(self.dist)
     
     def ransacf(self, xf, yf, num_inliers_thresh=20):
@@ -243,7 +244,7 @@ class LidarNode(Node):
                 v = 0.3
             else:
                 return
-            theta = A*(dl-dr) - B*math.sin(theta_now) + math.pi/12
+            theta = A*(dl-dr) - B*math.sin(theta_now) + math.pi/10
         
         elif self.now == 2:
             if -math.pi/2 < self.theta_right < -math.pi/3:
@@ -270,7 +271,7 @@ class LidarNode(Node):
         
         elif self.now == 6:
             V = 0.35
-            dl = 0.05
+            dl = 0.15
             Th = 3
             if front_OK and right_OK:
                 if df > 0.9 + R:
@@ -395,7 +396,7 @@ class LidarNode(Node):
                 v = 0.3
             else:
                 return
-            theta = V*(dl-dr) - Th*theta_now
+            theta = V*(dl-dr) - Th*theta_now  + math.pi/24
             print(f"----self.count_to_curve:{self.count_to_curve}, self.flont_far:{self.flont_far}, dl-dr:{dl-dr}, theta_now:{theta_now}----")
         
         elif self.now == 12:
@@ -414,6 +415,7 @@ class LidarNode(Node):
             theta = 0.5
         
         elif self.now == 13:
+            print(f"mode_13")
             if -math.pi/2 < self.theta_right < -math.pi/3:
                 if self.count_to_straight > 5:
                     self.count_to_straight = 0
@@ -426,15 +428,27 @@ class LidarNode(Node):
             print(f"----self.theta_right:{self.theta_right}, self.count_to_straight:{self.count_to_straight}----")
         
         elif self.now == 14:
-            if self.count_to_curve < 21:
-                v = 0.4
-                theta = -0.4 + 0.04 * self.count_to_curve
+            if self.count_to_curve < 41:
+                v = 0.3
+                theta = -0.4 + 0.02 * self.count_to_curve
                 self.count_to_curve += 1.0
             else:
                 self.count_to_curve = 0
                 self.now += 1
         
-        elif self.now == 15 or self.now == 16:
+        elif self.now == 15:
+            A = 1
+            dl = 0
+            B = 0.5
+            if right_OK:
+                if dl - dr > 0.1:
+                    A = 3
+                v = 0.3
+            else:
+                return
+            theta = A*(dl-dr) - B*math.sin(theta_now) + math.pi/12
+        
+        elif self.now == 16:
             A = 1
             dl = 0
             B = 0.5
@@ -474,7 +488,8 @@ class LidarNode(Node):
                 v = 0.3
             else:
                 return
-            theta = A*(dl-dr) - B*math.sin(theta_now)
+            theta = A*(dl-dr) - B*math.sin(theta_now)  + math.pi/12
+            print(f"----self.count_to_curve:{self.count_to_curve}, self.flont_far:{self.flont_far}, dl-dr:{dl-dr}, theta_now:{theta_now}----")
         
         elif self.now == 18:
             if -math.pi/2 < self.theta_right < -math.pi/3:
@@ -505,6 +520,14 @@ class LidarNode(Node):
         twist.angular.z = theta
         self.publisher.publish(twist)
         self.get_logger().info(f"v : {v}, theta : {theta}, possition : {self.now}")
+    
+        if self.now in self.camera_on_modes:
+            self.camera_move = True
+        else:
+            self.camera_move = False
+        msg = Bool()
+        msg.data = self.camera_move
+        self.camera_move_publisher.publish(msg)
             
 def main():
     rclpy.init()

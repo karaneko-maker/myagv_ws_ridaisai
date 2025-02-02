@@ -9,7 +9,7 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
-        ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/launch', ['launch/color_lidar_launch.py'])
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -24,7 +24,8 @@ setup(
             "test_node =color_lidar.test_node:main",
             "trans_command_node =color_lidar.trans_command_node:main",
             "lidar_node =color_lidar.lidar_node:main",
-            "second_lidar_node = second_lidar_node:main"
+            "second_lidar_node = color_lidar.second_lidar_node:main",
+            "agv_2_control_node = color_lidar.agv_2_control_node:main"
         ],
     },
 )

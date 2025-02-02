@@ -26,7 +26,7 @@ class ImageMonitorNode(Node):
         left_region = frame[:, :width // 1]  # 左端の1/4幅を切り出し
 
         # 赤色の閾値を設定
-        red_threshold = 60  # 赤の閾値（強さ）
+        red_threshold = 100  # 赤の閾値（強さ）
         green_threshold = 50  # 緑の閾値（低ければ低いほど赤と認識しやすい）
         blue_threshold = 50  # 青の閾値（低ければ低いほど赤と認識しやすい）
 
